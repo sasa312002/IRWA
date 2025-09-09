@@ -46,6 +46,7 @@ export const authAPI = {
 export const propertyAPI = {
   query: (propertyData) => api.post('/property/query', propertyData),
   history: (limit = 10) => api.get(`/property/history?limit=${limit}`),
+  getResponse: (queryId) => api.get(`/property/response/${queryId}`),
 }
 
 export const feedbackAPI = {

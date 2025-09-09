@@ -166,6 +166,59 @@ async def get_query_history(
             detail="Internal server error fetching query history"
         )
 
+@router.get("/response/{query_id}", response_model=PropertyResponse)
+async def get_query_response(
+    query_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get response data for a specific query"""
+    try:
+        # Check if query exists and belongs to user - Updated to SQLAlchemy 2.x syntax
+        stmt = select(Query).where(
+            Query.id == query_id,
+            Query.user_id == current_user.id
+        )
+        query = db.execute(stmt).scalar_one_or_none()
+        
+        if not query:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Query not found"
+            )
+        
+        # Get response for this query - Updated to SQLAlchemy 2.x syntax
+        stmt = select(Response).where(Response.query_id == query_id)
+        response = db.execute(stmt).scalar_one_or_none()
+        
+        if not response:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No response found for this query"
+            )
+        
+        # Convert response to PropertyResponse format
+        return PropertyResponse(
+            estimated_price=response.estimated_price,
+            location_score=response.location_score,
+            deal_verdict=response.deal_verdict,
+            why=response.why,
+            provenance=response.provenance or [],
+            confidence=response.confidence,
+            query_id=query_id,
+            response_id=response.id,
+            currency="LKR"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching query response: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error fetching query response"
+        )
+
 async def _run_analysis_pipeline(features: Dict[str, Any], query_text: str) -> Dict[str, Any]:
     """Run the complete AI analysis pipeline including land details"""
     try:

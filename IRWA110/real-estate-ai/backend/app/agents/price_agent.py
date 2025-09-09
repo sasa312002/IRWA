@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class PriceAgent:
     def __init__(self):
         # Sri Lankan LKR pricing per square foot (in LKR)
-        self.base_price_per_sqft = 25000  # Default base price per square foot in LKR
+        self.base_price_per_sqft = 8000  # Default base price per square foot in LKR
         
     def estimate_price(self, features: Dict) -> Dict:
         """
@@ -34,13 +34,13 @@ class PriceAgent:
             base_price *= type_multiplier
             
             # Bedroom and bathroom adjustments
-            bed_adjustment = (beds - 2) * 500000  # Each additional bed adds LKR 500k
-            bath_adjustment = (baths - 1) * 300000  # Each additional bath adds LKR 300k
+            bed_adjustment = (beds - 2) * 200000  # Each additional bed adds LKR 200k
+            bath_adjustment = (baths - 1) * 150000  # Each additional bath adds LKR 150k
             
             # Age adjustment (newer = more expensive)
             current_year = 2024
             age = current_year - year_built
-            age_adjustment = max(0, (30 - age) * 100000)  # Newer properties get premium
+            age_adjustment = max(0, (30 - age) * 50000)  # Newer properties get premium
             
             # City and district adjustment for Sri Lanka
             city_multiplier = self._get_city_multiplier(city, district)
@@ -48,7 +48,7 @@ class PriceAgent:
             # Land size adjustment for houses
             land_adjustment = 0
             if property_type == 'House' and land_size > 0:
-                land_adjustment = (land_size - area) * 15000  # Additional land value
+                land_adjustment = (land_size - area) * 5000  # Additional land value
             
             # Calculate estimated price
             estimated_price = (base_price + bed_adjustment + bath_adjustment + age_adjustment + land_adjustment) * city_multiplier

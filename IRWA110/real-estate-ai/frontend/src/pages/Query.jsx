@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { propertyAPI } from '../services/api'
 import ResponseCard from '../components/ResponseCard'
-import { Home, MapPin, Bed, Bath, Ruler, Calendar, DollarSign } from 'lucide-react'
+import { Home, MapPin, Bed, Bath, Ruler, Calendar, Banknote } from 'lucide-react'
 
 function Query() {
   const { user } = useAuth()
@@ -130,8 +130,8 @@ function Query() {
 
               <div>
                 <label htmlFor="asking_price" className="block text-sm font-medium text-gray-700 mb-2">
-                  <DollarSign className="inline w-4 h-4 mr-1" />
-                  Asking Price *
+                  <Banknote className="inline w-4 h-4 mr-1" />
+                  Asking Price (LKR) *
                 </label>
                 <input
                   type="number"

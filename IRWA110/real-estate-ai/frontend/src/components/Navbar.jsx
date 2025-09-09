@@ -1,11 +1,12 @@
 import React from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, LogOut, User } from 'lucide-react'
+import { Home, LogOut, User, History, Search } from 'lucide-react'
 
 function Navbar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleLogout = () => {
     logout()
@@ -25,6 +26,32 @@ function Navbar() {
               <Home className="h-8 w-8 text-primary-600 mr-2" />
               <span className="text-xl font-bold text-gray-900">Real Estate AI</span>
             </Link>
+            
+            {/* Navigation Tabs */}
+            <div className="ml-8 flex space-x-1">
+              <Link
+                to="/query"
+                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  location.pathname === '/query'
+                    ? 'bg-primary-100 text-primary-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <Search className="h-4 w-4 mr-2" />
+                Analyze
+              </Link>
+              <Link
+                to="/history"
+                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  location.pathname === '/history'
+                    ? 'bg-primary-100 text-primary-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <History className="h-4 w-4 mr-2" />
+                History
+              </Link>
+            </div>
           </div>
 
           <div className="flex items-center space-x-4">
