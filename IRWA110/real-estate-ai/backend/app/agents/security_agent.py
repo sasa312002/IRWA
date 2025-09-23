@@ -188,8 +188,8 @@ class SecurityAgent:
                             if not (1800 <= value <= 2030):
                                 errors.append(f"Invalid {field}: must be between 1800 and 2030")
                         elif field == 'asking_price':
-                            if not (0 < value <= 10000000):
-                                errors.append(f"Invalid {field}: must be between 0 and 10,000,000")
+                            if not (0 < value):
+                                errors.append(f"Invalid {field}: must be greater than 0")
                         
                         sanitized[field] = value
                     except (ValueError, TypeError):

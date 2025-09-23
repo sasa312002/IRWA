@@ -1,17 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
-from app.db.base import get_db
-from app.models.user import User
-from app.models.query import Query
-from app.models.response import Response
+from app.models.mongodb_models import User, Query, Response
 from app.api.auth import get_current_user
 from app.agents.price_agent import PriceAgent
 from app.agents.location_agent import LocationAgent
 from app.agents.deal_agent import DealAgent
 from app.agents.security_agent import SecurityAgent
+from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,14 +30,14 @@ class PropertyResponse(BaseModel):
     why: str
     provenance: List[Dict[str, Any]]
     confidence: float
-    query_id: int
-    response_id: int
+    query_id: str
+    response_id: str
     land_details: Optional[Dict[str, Any]] = None
     currency: str = "LKR"
     price_per_sqft: Optional[float] = None
 
 class QueryHistory(BaseModel):
-    id: int
+    id: str
     query_text: str
     created_at: str
     has_response: bool
@@ -49,8 +45,7 @@ class QueryHistory(BaseModel):
 @router.post("/query", response_model=PropertyResponse)
 async def analyze_property(
     property_query: PropertyQuery,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ):
     """Analyze a property using AI agents including land details"""
     try:
@@ -79,9 +74,7 @@ async def analyze_property(
             asking_price=sanitized_features.get('asking_price')
         )
         
-        db.add(db_query)
-        db.commit()
-        db.refresh(db_query)
+        await db_query.insert()
         
         # Run AI analysis pipeline including land details
         analysis_result = await _run_analysis_pipeline(sanitized_features, sanitized_query)
@@ -97,9 +90,7 @@ async def analyze_property(
             provenance=analysis_result['provenance']
         )
         
-        db.add(db_response)
-        db.commit()
-        db.refresh(db_response)
+        await db_response.insert()
         
         # Filter output for security
         filtered_result = security_agent.filter_output(analysis_result)
@@ -111,8 +102,8 @@ async def analyze_property(
             why=filtered_result['why'],
             provenance=filtered_result['provenance'],
             confidence=filtered_result['confidence'],
-            query_id=db_query.id,
-            response_id=db_response.id,
+            query_id=str(db_query.id),
+            response_id=str(db_response.id),
             land_details=filtered_result.get('land_details'),
             currency=filtered_result.get('currency', 'LKR'),
             price_per_sqft=filtered_result.get('price_per_sqft')
@@ -122,8 +113,6 @@ async def analyze_property(
         raise
     except Exception as e:
         logger.error(f"Error in property analysis: {e}")
-        if 'db_query' in locals():
-            db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during property analysis"
@@ -132,26 +121,23 @@ async def analyze_property(
 @router.get("/history", response_model=List[QueryHistory])
 async def get_query_history(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
     limit: int = 10
 ):
     """Get user's query history"""
     try:
-        # Updated to SQLAlchemy 2.x syntax
-        stmt = select(Query).where(
-            Query.user_id == current_user.id
-        ).order_by(Query.created_at.desc()).limit(limit)
-        queries = db.execute(stmt).scalars().all()
+        # Get user's queries
+        queries = await Query.find(
+            {"user_id": current_user.id}
+        ).sort([("created_at", -1)]).limit(limit).to_list()
         
         history = []
         for query in queries:
-            # Check if query has a response - Updated to SQLAlchemy 2.x syntax
-            stmt = select(Response).where(Response.query_id == query.id)
-            response = db.execute(stmt).scalar_one_or_none()
+            # Check if query has a response
+            response = await Response.find_one({"query_id": query.id})
             has_response = response is not None
             
             history.append(QueryHistory(
-                id=query.id,
+                id=str(query.id),
                 query_text=query.query_text,
                 created_at=query.created_at.isoformat(),
                 has_response=has_response

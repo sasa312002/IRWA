@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api import auth, query, feedback
-from app.db.base import engine, Base
+from app.db.mongodb import connect_to_mongo, close_mongo_connection
 import logging
 
 # Configure logging
@@ -33,13 +33,22 @@ app.include_router(feedback.router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database tables on startup"""
+    """Initialize database connection on startup"""
     try:
-        # Create all tables
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
+        # Connect to MongoDB
+        await connect_to_mongo()
+        logger.info("MongoDB connection established successfully")
     except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
+        logger.error(f"Error connecting to MongoDB: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection on shutdown"""
+    try:
+        await close_mongo_connection()
+        logger.info("MongoDB connection closed successfully")
+    except Exception as e:
+        logger.error(f"Error closing MongoDB connection: {e}")
 
 @app.get("/")
 async def root():

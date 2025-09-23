@@ -1,12 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import select
 from pydantic import BaseModel
-from app.db.base import get_db
-from app.models.user import User
-from app.models.response import Response
-from app.models.feedback import Feedback
+from app.models.mongodb_models import User, Response, Feedback
 from app.api.auth import get_current_user
+from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,26 +11,24 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 
 # Pydantic models
 class FeedbackRequest(BaseModel):
-    response_id: int
+    response_id: str
     is_positive: bool
 
 class FeedbackResponse(BaseModel):
-    id: int
-    response_id: int
+    id: str
+    response_id: str
     is_positive: bool
     created_at: str
 
 @router.post("/", response_model=FeedbackResponse)
 async def submit_feedback(
     feedback_data: FeedbackRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ):
     """Submit feedback for a property analysis response"""
     try:
-        # Check if response exists - Updated to SQLAlchemy 2.x syntax
-        stmt = select(Response).where(Response.id == feedback_data.response_id)
-        response = db.execute(stmt).scalar_one_or_none()
+        # Check if response exists
+        response = await Response.get(ObjectId(feedback_data.response_id))
         
         if not response:
             raise HTTPException(
@@ -42,44 +36,40 @@ async def submit_feedback(
                 detail="Response not found"
             )
         
-        # Check if user already provided feedback for this response - Updated to SQLAlchemy 2.x syntax
-        stmt = select(Feedback).where(
-            Feedback.response_id == feedback_data.response_id,
-            Feedback.user_id == current_user.id
-        )
-        existing_feedback = db.execute(stmt).scalar_one_or_none()
+        # Check if user already provided feedback for this response
+        existing_feedback = await Feedback.find_one({
+            "response_id": ObjectId(feedback_data.response_id),
+            "user_id": current_user.id
+        })
         
         if existing_feedback:
             # Update existing feedback
             existing_feedback.is_positive = feedback_data.is_positive
-            db.commit()
-            db.refresh(existing_feedback)
+            await existing_feedback.save()
             
             logger.info(f"Feedback updated for response {feedback_data.response_id} by user {current_user.id}")
             
             return FeedbackResponse(
-                id=existing_feedback.id,
-                response_id=existing_feedback.response_id,
+                id=str(existing_feedback.id),
+                response_id=str(existing_feedback.response_id),
                 is_positive=existing_feedback.is_positive,
                 created_at=existing_feedback.created_at.isoformat()
             )
         else:
             # Create new feedback
             new_feedback = Feedback(
-                response_id=feedback_data.response_id,
+                response_id=ObjectId(feedback_data.response_id),
                 user_id=current_user.id,
                 is_positive=feedback_data.is_positive
             )
             
-            db.add(new_feedback)
-            db.commit()
-            db.refresh(new_feedback)
+            await new_feedback.insert()
             
             logger.info(f"New feedback submitted for response {feedback_data.response_id} by user {current_user.id}")
             
             return FeedbackResponse(
-                id=new_feedback.id,
-                response_id=new_feedback.response_id,
+                id=str(new_feedback.id),
+                response_id=str(new_feedback.response_id),
                 is_positive=new_feedback.is_positive,
                 created_at=new_feedback.created_at.isoformat()
             )
@@ -88,7 +78,6 @@ async def submit_feedback(
         raise
     except Exception as e:
         logger.error(f"Error submitting feedback: {e}")
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error submitting feedback"
@@ -96,15 +85,13 @@ async def submit_feedback(
 
 @router.get("/response/{response_id}")
 async def get_response_feedback(
-    response_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    response_id: str,
+    current_user: User = Depends(get_current_user)
 ):
     """Get feedback statistics for a specific response"""
     try:
-        # Check if response exists - Updated to SQLAlchemy 2.x syntax
-        stmt = select(Response).where(Response.id == response_id)
-        response = db.execute(stmt).scalar_one_or_none()
+        # Check if response exists
+        response = await Response.get(ObjectId(response_id))
         
         if not response:
             raise HTTPException(
@@ -112,22 +99,18 @@ async def get_response_feedback(
                 detail="Response not found"
             )
         
-        # Get feedback statistics - Updated to SQLAlchemy 2.x syntax
-        stmt = select(Feedback).where(Feedback.response_id == response_id)
-        total_feedback = len(db.execute(stmt).scalars().all())
+        # Get feedback statistics
+        total_feedback = await Feedback.find({"response_id": ObjectId(response_id)}).count()
+        positive_feedback = await Feedback.find({
+            "response_id": ObjectId(response_id),
+            "is_positive": True
+        }).count()
         
-        stmt = select(Feedback).where(
-            Feedback.response_id == response_id,
-            Feedback.is_positive == True
-        )
-        positive_feedback = len(db.execute(stmt).scalars().all())
-        
-        # Get user's feedback if any - Updated to SQLAlchemy 2.x syntax
-        stmt = select(Feedback).where(
-            Feedback.response_id == response_id,
-            Feedback.user_id == current_user.id
-        )
-        user_feedback = db.execute(stmt).scalar_one_or_none()
+        # Get user's feedback if any
+        user_feedback = await Feedback.find_one({
+            "response_id": ObjectId(response_id),
+            "user_id": current_user.id
+        })
         
         return {
             "response_id": response_id,

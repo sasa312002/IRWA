@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
-from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
-from app.db.base import get_db
-from app.models.user import User
+from app.models.mongodb_models import User
 from app.core.security import verify_password, get_password_hash, create_access_token, verify_token
 from app.core.config import settings
+from app.db.mongodb import mongodb
+from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,7 +24,7 @@ class UserLogin(BaseModel):
     password: str
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     email: str
     username: str
     is_active: bool
@@ -36,8 +35,7 @@ class TokenResponse(BaseModel):
 
 # Helper function to get current user
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> User:
     token = credentials.credentials
     payload = verify_token(token)
@@ -57,9 +55,11 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Updated to SQLAlchemy 2.x syntax
-    stmt = select(User).where(User.id == user_id)
-    user = db.execute(stmt).scalar_one_or_none()
+    # Find user by ObjectId
+    try:
+        user = await User.get(ObjectId(user_id))
+    except Exception:
+        user = None
     
     if user is None:
         raise HTTPException(
@@ -71,14 +71,22 @@ async def get_current_user(
     return user
 
 @router.post("/signup", response_model=TokenResponse)
-async def signup(user_data: UserSignup, db: Session = Depends(get_db)):
+async def signup(user_data: UserSignup):
     """Create a new user account"""
     try:
-        # Check if user already exists - Updated to SQLAlchemy 2.x syntax
-        stmt = select(User).where(
-            (User.email == user_data.email) | (User.username == user_data.username)
+        # Check if MongoDB is connected
+        if not mongodb.client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is not available. Please install and start MongoDB."
+            )
+        # Check if user already exists
+        existing_user = await User.find_one(
+            {"$or": [
+                {"email": user_data.email},
+                {"username": user_data.username}
+            ]}
         )
-        existing_user = db.execute(stmt).scalar_one_or_none()
         
         if existing_user:
             raise HTTPException(
@@ -101,9 +109,7 @@ async def signup(user_data: UserSignup, db: Session = Depends(get_db)):
             hashed_password=hashed_password
         )
         
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        await new_user.insert()
         
         # Generate access token
         access_token = create_access_token(data={"sub": str(new_user.id)})
@@ -116,19 +122,23 @@ async def signup(user_data: UserSignup, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         logger.error(f"Error in user signup: {e}")
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during signup"
         )
 
 @router.post("/login", response_model=TokenResponse)
-async def login(user_data: UserLogin, db: Session = Depends(get_db)):
+async def login(user_data: UserLogin):
     """Authenticate user and return access token"""
     try:
-        # Find user by email - Updated to SQLAlchemy 2.x syntax
-        stmt = select(User).where(User.email == user_data.email)
-        user = db.execute(stmt).scalar_one_or_none()
+        # Check if MongoDB is connected
+        if not mongodb.client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is not available. Please install and start MongoDB."
+            )
+        # Find user by email
+        user = await User.find_one({"email": user_data.email})
         
         if not user or not verify_password(user_data.password, user.hashed_password):
             raise HTTPException(
@@ -163,7 +173,7 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Get current user information"""
     return UserResponse(
-        id=current_user.id,
+        id=str(current_user.id),
         email=current_user.email,
         username=current_user.username,
         is_active=current_user.is_active

@@ -3,8 +3,13 @@ from typing import List
 import os
 
 class Settings(BaseSettings):
-    # Database
-    database_url: str = "sqlite:///./realestate.db"
+    # Database - Support both old and new field names
+    mongodb_url: str = "mongodb://localhost:27017"
+    database_name: str = "realestate_srilanka"
+    
+    # Legacy support for old field names
+    database_url: str = ""  # Will be ignored
+    mongodb_uri: str = ""   # Will be ignored
     
     # JWT
     jwt_secret: str = "change_me_to_a_secure_random_string"
@@ -23,7 +28,14 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra fields instead of raising errors
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Handle migration from old field names
+        if self.mongodb_uri and not self.mongodb_url.startswith("mongodb://localhost"):
+            self.mongodb_url = self.mongodb_uri
+    
     @property
     def cors_origins(self) -> List[str]:
         """Convert allow_origins string to list for CORS middleware"""
